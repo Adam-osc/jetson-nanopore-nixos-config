@@ -16,22 +16,21 @@
           url = "https://github.com/anduril/jetpack-nixos/archive/9ced0c1231f03540a1f31b883c62503f6fc08a21.tar.gz";
           sha256 = "06m0zqq8z973hq9yj8d26hh1hqn5g9avkxlsvdnf509z5z65ci99";
         } + "/modules/default.nix")
-        (import ../../services/minknow-manager-docker-compose.nix) {
+        (import ../../services/minknow-manager-docker-compose.nix {
           name = "minknow-manager";
           version = "6.2.6";
           positionsPortStart = 8000;
           managerPortStart = 9501;
           expose = true;
           inherit minknowDataDir minknowLogDir doradoSocket minknowManagerDockerfile;
-        }
-        (import ../../services/dorado-service.nix) {
+        })
+        (import ../../services/dorado-service.nix {
           name = "doradod";
           version = "7.6.7";
-          doradoLogDir = "${minknowLogDir}/dorado";
           doradoServer = (import ../../packages/dorado-server.nix { inherit lib pkgs; });
           doradoModels = (import ../../packages/dorado-models.nix { inherit lib pkgs; });
-          inherit doradoSocket;
-        }
+          inherit minknowLogDir doradoSocket;
+        })
         ./hardware-configuration.nix
       ];
 

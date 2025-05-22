@@ -21,42 +21,19 @@ let
     let p = toString (managerPortStart + i);
     in "${p}:${p}/tcp"
   ) 5;
-  doradoSocketDir = lib.dirOf doradoSocket;
+  doradoSocketDir = builtins.dirOf doradoSocket;
 in
 {
   # Containers
   virtualisation.oci-containers.containers."${containerName}" = {
     image = "${containerName}-pre";
-    bindMounts = lib.mkMerge [
-      {
-        "/dev/bus/usb" = {
-          hostPath = "/dev/bus/usb";
-          isReadOnly = false;
-        };
-        "/run/udev" = {
-          hostPath = "/run/udev";
-          isReadOnly = true;
-        };
-        "${minknowDataDir}" = {
-          hostPath = "/var/lib/minknow/data";
-          isReadOnly = false;
-        };
-        "${minknowLogDir}" = {
-          hostPath = "/var/log/minknow";
-          isReadOnly = false;
-        };
-        "${doradoSocketDir}" = {
-          hostPath = "/tmp/.guppy";
-          isReadOnly = false;
-        };
-      }
-      (lib.mkIf expose {
-        "/tmp" = {
-          hostPath = "/tmp";
-          isReadOnly = true;
-        };
-      })
-    ];
+    volumes = [
+      "/dev/bus/usb:/dev/bus/usb:rw"
+      "/run/udev:/run/udev:ro"
+      "${minknowDataDir}/data:/var/lib/minknow/data:rw"
+      "${minknowLogDir}:/var/log/minknow:rw"
+      "${doradoSocketDir}:/tmp/.guppy:rw"
+    ] ++ (if expose then [ "/tmp:/tmp:rw" ] else [  ]);
     ports = positionsPorts ++ managerPorts;
     log-driver = "journald";
     extraOptions = [
@@ -68,8 +45,10 @@ in
 
   systemd.tmpfiles.rules = [
     "d ${minknowLogDir} 0775 minknowuser01 minknowuser01 -"
+    "d ${minknowLogDir}/dorado 0775 minknowuser01 minknowuser01 -"
     "d ${minknowDataDir} 0775 minknowuser01 minknowuser01 -"
     "d ${minknowDataDir}/data 0775 minknowuser01 minknowuser01 -"
+    "d ${doradoSocketDir} 0775 minknowuser01 minknowuser01 -"
   ];
 
   systemd.services."docker-${containerName}" = {
@@ -115,7 +94,7 @@ in
         TimeoutSec = 300;
       };
       script = ''
-          docker build -t ${containerName}-pre . -f ${minknowManagerDockerfile}
+          docker build -t "${containerName}-pre" . -f ${minknowManagerDockerfile}
         '';
     };
 
