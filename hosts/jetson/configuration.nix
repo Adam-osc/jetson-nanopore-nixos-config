@@ -2,14 +2,38 @@
 
 {
   imports =
-    [
-      (builtins.fetchTarball {
-        url = "https://github.com/anduril/jetpack-nixos/archive/9ced0c1231f03540a1f31b883c62503f6fc08a21.tar.gz";
-        sha256 = "06m0zqq8z973hq9yj8d26hh1hqn5g9avkxlsvdnf509z5z65ci99";
-      } + "/modules/default.nix")
-      ./hardware-configuration.nix
-      ./ont-minknow-docker-compose.nix
-    ];
+    let
+      minknowDataDir = "/var/lib/minknow";
+      minknowLogDir = "/var/log/minknow";
+      doradoSocket = "/tmp/.guppy/5555";
+      minknowManagerDockerfile = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/Adam-osc/minknow-manager-docker/0ea1f6bc571e7df4f9b099099bf9338b72e98b3e/Dockerfile";
+        sha256 = "sha256-lA76KByDiCk3hrG2LoM1S5VJ4GtxTkY3Wt6UDBZVsQ8=";
+      };
+    in
+      [
+        (builtins.fetchTarball {
+          url = "https://github.com/anduril/jetpack-nixos/archive/9ced0c1231f03540a1f31b883c62503f6fc08a21.tar.gz";
+          sha256 = "06m0zqq8z973hq9yj8d26hh1hqn5g9avkxlsvdnf509z5z65ci99";
+        } + "/modules/default.nix")
+        (import ../../services/minknow-manager-docker-compose.nix) {
+          name = "minknow-manager";
+          version = "6.2.6";
+          positionsPortStart = 8000;
+          managerPortStart = 9501;
+          expose = true;
+          inherit minknowDataDir minknowLogDir doradoSocket minknowManagerDockerfile;
+        }
+        (import ../../services/dorado-service.nix) {
+          name = "doradod";
+          version = "7.6.7";
+          doradoLogDir = "${minknowLogDir}/dorado";
+          doradoServer = (import ../../packages/dorado-server.nix { inherit lib pkgs; });
+          doradoModels = (import ../../packages/dorado-models.nix { inherit lib pkgs; });
+          inherit doradoSocket;
+        }
+        ./hardware-configuration.nix
+      ];
 
   hardware.nvidia-jetpack.enable = true;
   hardware.nvidia-jetpack.som = "xavier-nx-emmc";
@@ -58,7 +82,7 @@
       PermitRootLogin = "yes";
     };
   };
-  networking.firewall.allowedTCPPorts = config.services.openssh.ports;
+  networking.firewall.allowedTCPPorts = config.services.openssh.ports ++ [ 8050 ];
 
   virtualisation.docker = {
     enable = true;
@@ -71,63 +95,6 @@
 
   virtualisation.podman.enable = true;
   virtualisation.podman.enableNvidia = true;
-
-  # TODO: put the following into separate modules
-  systemd.tmpfiles.rules = [
-    "d /var/log/minknow 0775 minknowuser01 minknowuser01 -"
-    "d /var/log/minknow/dorado 0775 minknowuser01 minknowuser01 -"
-    "d /var/lib/minknow 0775 minknowuser01 minknowuser01 -"
-    "d /var/lib/minknow/data 0775 minknowuser01 minknowuser01 -"
-    "d /tmp/.guppy 0775 minknowuser01 minknowuser01 -"
-  ];
-
-  # TODO: make a dorado module out of this to demonstrate cross-cutting
-  systemd.services.doradod-socket-permissions = {
-    after = [ "doradod.service" ];
-    requires = [ "doradod.service" ];
-    wantedBy = [ "multi-user.target" ];
-
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = ''
-        ${pkgs.dash}/bin/dash -c ' \
-          for i in $(seq 1 600); do \
-            [ -S /tmp/.guppy/5555 ] && break; \
-            sleep 1; \
-          done; \
-          chmod 0775 /tmp/.guppy/5555; \
-        '
-      '';
-      User = "minknowuser01";
-    };
-  };
-  systemd.services.doradod =
-    let
-      ont-dorado-server = import ../../packages/dorado-server.nix { inherit lib pkgs; };
-      ont-dorado-models = import ../../packages/dorado-models.nix { inherit lib pkgs; };
-    in
-      {
-        after = [ "nvpmodel.service" ];
-        wantedBy = [ "multi-user.target" ];
-
-        serviceConfig = {
-          Type = "simple";
-          ExecStart = ''
-            ${ont-dorado-server}/opt/ont/dorado/bin/dorado_basecall_server \
-            --log_path /var/log/minknow/dorado \
-            --config dna_r10.4.1_e8.2_400bps_fast.cfg \
-            --port /tmp/.guppy/5555 \
-            --dorado_download_path ${ont-dorado-models}/opt/ont/dorado-models \
-            --device cuda:all
-          '';
-          RestartPreventExitStatus = 2;
-          Restart = "always";
-          RestartSec = 10;
-          User = "minknowuser01";
-          MemoryHigh = "8G";
-        };
-      };
 
   users.users.xbonisl = {
     isNormalUser = true;
