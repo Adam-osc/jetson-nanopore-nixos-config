@@ -14,7 +14,7 @@ Study the code and apply any other suitable changes to it.
 
 ## 3. Deployment
 
-To deploy the desired run the following command from within the cloned directory:
+To deploy the desired configuration run the following command from within the cloned directory:
 ```bash
 sudo nixos-rebuild switch --flake .#jetson
 ```
